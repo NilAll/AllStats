@@ -13,6 +13,7 @@
         .not-green { background-color: #ffffff !important; color: #000 !important; font-weight: 900; }
         .live-pulse { width: 8px; height: 8px; background-color: #ef4444; border-radius: 50%; animation: pulse 1.5s infinite; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
+        .date-header { font-size: 11px; font-weight: 900; color: #6b7280; text-transform: uppercase; letter-spacing: 0.15em; margin: 24px 0 8px 4px; border-bottom: 1px solid #1f2937; padding-bottom: 4px; }
     </style>
 </head>
 <body class="pb-10">
@@ -24,11 +25,11 @@
 
     <main class="p-4">
         <div id="stats-summary" class="flex gap-2 mb-6 hidden">
-            <div class="flex-1 bg-green-900/30 border border-green-600 p-3 rounded-xl text-center">
+            <div class="flex-1 bg-green-900/20 border border-green-600/50 p-3 rounded-xl text-center">
                 <div class="text-[10px] uppercase font-bold text-green-500 tracking-wider">Greens (Hoje)</div>
                 <div id="green-count" class="text-2xl font-black text-white">0</div>
             </div>
-            <div class="flex-1 bg-red-900/30 border border-red-600 p-3 rounded-xl text-center">
+            <div class="flex-1 bg-red-900/20 border border-red-600/50 p-3 rounded-xl text-center">
                 <div class="text-[10px] uppercase font-bold text-red-500 tracking-wider">Reds (Hoje)</div>
                 <div id="red-count" class="text-2xl font-black text-white">0</div>
             </div>
@@ -36,15 +37,14 @@
 
         <div id="status-container" class="text-center py-20">
             <div id="loading-msg" class="text-gray-500 font-bold text-xs uppercase tracking-widest animate-pulse">
-                Buscando Jogos...
+                Organizando Calendário...
             </div>
             <div id="auth-btn" class="hidden">
-                <p class="text-gray-400 text-sm mb-4 px-6">Validação de segurança necessária para ver os jogos.</p>
                 <a href="https://cors-anywhere.herokuapp.com/corsdemo" target="_blank" 
-                   class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-6 rounded-xl shadow-lg shadow-blue-900/50 transition-all inline-block uppercase text-xs tracking-wider">
-                    🔓 Liberar Acesso
+                   class="bg-blue-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg inline-block uppercase text-xs tracking-wider">
+                    🔓 Liberar Acesso aos Dados
                 </a>
-                <p class="text-[10px] text-gray-600 mt-4">Clique no botão, depois em "Request access" e volte aqui.</p>
+                <p class="text-[10px] text-gray-500 mt-4">Clique acima, depois em "Request temporary access".</p>
             </div>
         </div>
 
@@ -57,27 +57,23 @@
         const API_KEY = 'b12ef8888e5148479abd9c6632c8e00b';
         const PROXY = 'https://cors-anywhere.herokuapp.com/'; 
 
-        // Função auxiliar para pegar data local formato YYYY-MM-DD
-        function getLocalDateString(offsetDays = 0) {
+        // Data Local YYYY-MM-DD
+        function getLocalYMD(offset = 0) {
             const d = new Date();
-            d.setDate(d.getDate() + offsetDays);
-            const year = d.getFullYear();
-            const month = String(d.getMonth() + 1).padStart(2, '0');
-            const day = String(d.getDate()).padStart(2, '0');
-            return `${year}-${month}-${day}`;
+            d.setDate(d.getDate() + offset);
+            return d.toLocaleDateString('en-CA'); // Formato ISO local
         }
 
         async function fetchData() {
             document.getElementById('loading-msg').classList.remove('hidden');
             document.getElementById('auth-btn').classList.add('hidden');
-            
+
             try {
-                // CORREÇÃO: Usando data LOCAL. Pega de Ontem (-1) até +6 dias.
-                const start = getLocalDateString(-1);
-                const end = getLocalDateString(6);
+                // Range ampliado: Ontem até +7 dias
+                const start = getLocalYMD(-1); 
+                const end = getLocalYMD(7);
                 
-                // Adicionei um número aleatório no final (&_=${Date.now()}) para evitar Cache do celular
-                const res = await fetch(`${PROXY}https://api.football-data.org/v4/matches?dateFrom=${start}&dateTo=${end}&_=${Date.now()}`, {
+                const res = await fetch(`${PROXY}https://api.football-data.org/v4/matches?dateFrom=${start}&dateTo=${end}`, {
                     headers: { 'X-Auth-Token': API_KEY }
                 });
 
@@ -89,26 +85,28 @@
 
                 const data = await res.json();
                 document.getElementById('status-container').classList.add('hidden');
-                
-                // Filtros
+
                 const live = data.matches.filter(m => m.status === 'IN_PLAY' || m.status === 'PAUSED');
                 const finished = data.matches.filter(m => m.status === 'FINISHED');
                 const upcoming = data.matches.filter(m => m.status === 'TIMED' || m.status === 'SCHEDULED');
 
-                renderSection('live-area', live, 'Ao Vivo', true, false);
-                renderSection('finished-area', finished, 'Finalizados (Ontem/Hoje)', false, true);
-                renderSection('next-area', upcoming, 'Próximos Jogos', false, false);
+                // Renderização Simples para Ao Vivo
+                renderSimpleSection('live-area', live, 'Ao Vivo', true);
+                
+                // Renderização Agrupada por Data
+                renderGroupedSection('finished-area', finished, 'audit', false);
+                renderGroupedSection('next-area', upcoming, 'schedule', false);
 
                 updateCounters(finished);
 
-            } catch (e) { 
-                document.getElementById('loading-msg').innerText = "Erro. Verifique internet ou Proxy.";
+            } catch (e) {
                 console.error(e);
+                document.getElementById('loading-msg').innerText = "Erro de conexão.";
             }
         }
 
+        // --- Lógica de Palpites ---
         function analyze(match) {
-            // Lógica fixa de palpites
             const seed = match.homeTeam.id + match.awayTeam.id;
             const power = seed % 100;
             let mkt = power > 75 ? '+3.5 Gols' : power > 45 ? '+2.5 Gols' : power > 15 ? '+1.5 Gols' : '+0.5 Gols';
@@ -119,24 +117,123 @@
         function calculateWin(stat, h, a, isFinished) {
             const total = h + a;
             const target = parseFloat(stat.mkt.match(/[\d\.]+/)[0]);
+            if (stat.mkt.includes('-')) return isFinished && total < target;
+            return total >= target;
+        }
+
+        // --- Renderização ---
+        
+        function renderCardHTML(match, isLive, isFinished) {
+            const stat = analyze(match);
+            const h = match.score.fullTime.home || 0;
+            const a = match.score.fullTime.away || 0;
+            const win = calculateWin(stat, h, a, isFinished);
+
+            let statusClass = 'not-green';
+            let statusText = 'Aguardando';
             
-            if (stat.mkt.includes('-')) {
-                // Menos Gols: Só é Green se acabou E ficou abaixo
-                return isFinished && total < target;
-            } else {
-                // Mais Gols: É Green assim que bate a meta
-                return total >= target;
+            if (isFinished) {
+                statusClass = win ? 'is-green' : 'is-red';
+                statusText = win ? '🎯 Green' : '❌ Red';
+            } else if (win) {
+                statusClass = 'is-green';
+                statusText = '🎯 Bateu';
             }
+
+            const dt = new Date(match.utcDate);
+            const timeStr = dt.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
+            const dateStr = dt.toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'});
+            
+            // Texto do status no topo do card
+            let topStatus = isLive ? 'EM JOGO' : timeStr;
+            if (isFinished) topStatus = `FIM • ${dateStr} ${timeStr}`;
+
+            return `
+            <div class="match-card p-4">
+                <div class="flex justify-between text-[9px] mb-4 font-black text-gray-500 uppercase">
+                    <span>${match.area.name} - ${match.competition.name}</span>
+                    <span class="${isLive ? 'text-red-500 animate-pulse' : ''}">${topStatus}</span>
+                </div>
+                <div class="flex items-center justify-between">
+                    <div class="flex-1 space-y-4">
+                        <div class="flex items-center gap-3">
+                            <img src="${match.homeTeam.crest}" class="w-6 h-6 object-contain">
+                            <span class="text-sm font-bold text-gray-100">${match.homeTeam.shortName}</span>
+                            <span class="ml-auto font-black text-lg ${h > 0 ? 'text-green-500' : 'text-gray-500'}">${h}</span>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <img src="${match.awayTeam.crest}" class="w-6 h-6 object-contain">
+                            <span class="text-sm font-bold text-gray-100">${match.awayTeam.shortName}</span>
+                            <span class="ml-auto font-black text-lg ${a > 0 ? 'text-green-500' : 'text-gray-500'}">${a}</span>
+                        </div>
+                    </div>
+                    <div class="ml-6 ${statusClass} rounded-2xl p-3 min-w-[105px] text-center shadow-lg transition-all">
+                        <div class="text-[9px] font-black uppercase leading-none">${stat.mkt}</div>
+                        <div class="text-xl font-black mt-1 leading-none">${stat.prob}%</div>
+                        <div class="text-[8px] font-bold mt-1.5 uppercase tracking-tighter">${statusText}</div>
+                    </div>
+                </div>
+            </div>`;
+        }
+
+        function renderSimpleSection(id, list, title, isLive) {
+            const container = document.getElementById(id);
+            container.innerHTML = '';
+            if (!list.length) return;
+            
+            container.innerHTML = `<h2 class="text-[10px] font-black text-gray-500 uppercase mb-3 mt-6 flex items-center gap-2 tracking-widest">
+                <span class="live-pulse"></span> ${title} (${list.length})</h2>` + 
+                list.map(m => renderCardHTML(m, isLive, false)).join('');
+        }
+
+        function renderGroupedSection(id, list, type, isFinishedFallback) {
+            const container = document.getElementById(id);
+            container.innerHTML = '';
+            if (!list.length) return;
+
+            // Agrupa por data (YYYY-MM-DD)
+            const groups = {};
+            list.forEach(m => {
+                // Ajuste de fuso para garantir agrupamento correto
+                const localDate = new Date(m.utcDate).toLocaleDateString('en-CA');
+                if (!groups[localDate]) groups[localDate] = [];
+                groups[localDate].push(m);
+            });
+
+            // Ordena as chaves (Datas)
+            let keys = Object.keys(groups).sort();
+            
+            // Se for Auditoria (Finished), inverte para mostrar HOJE primeiro, depois ONTEM
+            if (type === 'audit') keys.reverse();
+
+            keys.forEach(dateKey => {
+                const groupList = groups[dateKey];
+                const dateObj = new Date(dateKey + 'T12:00:00'); // Evita bug de timezone na conversão
+                
+                // Formatação do Título da Data
+                let title = dateObj.toLocaleDateString('pt-BR', {weekday: 'long', day: '2-digit', month: '2-digit'});
+                
+                const today = getLocalYMD(0);
+                const yest = getLocalYMD(-1);
+                
+                if (dateKey === today) title = `HOJE (${title})`;
+                else if (dateKey === yest) title = `ONTEM (${title})`;
+
+                container.innerHTML += `<div class="date-header">${title}</div>`;
+                
+                // Renderiza os cards deste grupo
+                const isFinishedGroup = type === 'audit'; 
+                container.innerHTML += groupList.map(m => renderCardHTML(m, false, isFinishedGroup)).join('');
+            });
         }
 
         function updateCounters(finished) {
             let greens = 0, reds = 0;
-            // Filtra para contar apenas os finalizados de HOJE no placar, para ser justo
-            const todayStr = getLocalDateString(0);
+            const today = getLocalYMD(0);
             
             finished.forEach(match => {
-                // Conta no placar se for de hoje. Se quiser contar ontem também, remova o if.
-                if(match.utcDate.includes(todayStr)) {
+                // Conta apenas os finalizados de HOJE no placar
+                if (new Date(match.utcDate).toLocaleDateString('en-CA') === today) {
                     const stat = analyze(match);
                     const win = calculateWin(stat, match.score.fullTime.home || 0, match.score.fullTime.away || 0, true);
                     win ? greens++ : reds++;
@@ -146,76 +243,15 @@
             document.getElementById('red-count').innerText = reds;
             if (greens + reds > 0) document.getElementById('stats-summary').classList.remove('hidden');
         }
-
-        function renderSection(id, list, title, isLive, isFinished) {
-            const container = document.getElementById(id);
-            if (!list.length) { container.innerHTML = ''; return; }
-
-            container.innerHTML = `<h2 class="text-[10px] font-black text-gray-500 uppercase mb-3 mt-6 flex items-center gap-2 tracking-widest">
-                ${isLive ? '<span class="live-pulse"></span>' : ''}${title} (${list.length})</h2>` + 
-            list.map(match => {
-                const stat = analyze(match);
-                const h = match.score.fullTime.home || 0;
-                const a = match.score.fullTime.away || 0;
-                
-                const win = calculateWin(stat, h, a, isFinished);
-                
-                let statusClass = 'not-green';
-                let statusText = 'Aguardando';
-
-                if (isFinished) {
-                    statusClass = win ? 'is-green' : 'is-red';
-                    statusText = win ? '🎯 Green' : '❌ Red';
-                } else if (win) {
-                    statusClass = 'is-green';
-                    statusText = '🎯 Bateu';
-                }
-
-                const dt = new Date(match.utcDate);
-                const timeStr = dt.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-                const dateStr = dt.toLocaleDateString([], {day:'2-digit', month:'2-digit'});
-
-                return `
-                <div class="match-card p-4">
-                    <div class="flex justify-between text-[9px] mb-4 font-black text-gray-500 uppercase">
-                        <span>${match.area.name} - ${match.competition.name}</span>
-                        <span>${isFinished ? 'FIM' : (isLive ? 'LIVE' : dateStr + ' ' + timeStr)}</span>
-                    </div>
-                    <div class="flex items-center justify-between">
-                        <div class="flex-1 space-y-4">
-                            <div class="flex items-center gap-3">
-                                <img src="${match.homeTeam.crest}" class="w-6 h-6 object-contain">
-                                <span class="text-sm font-bold text-gray-100">${match.homeTeam.shortName}</span>
-                                <span class="ml-auto font-black text-lg ${h > 0 ? 'text-green-500' : 'text-gray-500'}">${h}</span>
-                            </div>
-                            <div class="flex items-center gap-3">
-                                <img src="${match.awayTeam.crest}" class="w-6 h-6 object-contain">
-                                <span class="text-sm font-bold text-gray-100">${match.awayTeam.shortName}</span>
-                                <span class="ml-auto font-black text-lg ${a > 0 ? 'text-green-500' : 'text-gray-500'}">${a}</span>
-                            </div>
-                        </div>
-                        <div class="ml-6 ${statusClass} rounded-2xl p-3 min-w-[105px] text-center shadow-lg transition-all">
-                            <div class="text-[9px] font-black uppercase leading-none">${stat.mkt}</div>
-                            <div class="text-xl font-black mt-1 leading-none">${stat.prob}%</div>
-                            <div class="text-[8px] font-bold mt-1.5 uppercase tracking-tighter">${statusText}</div>
-                        </div>
-                    </div>
-                </div>`;
-            }).join('');
-        }
         
-        // Inicia
         fetchData();
-
-        // Sistema de Auto-Refresh à Meia-Noite
-        let lastDay = new Date().getDate();
+        
+        // Auto-refresh na virada do dia
         setInterval(() => {
-            const currentDay = new Date().getDate();
-            if (currentDay !== lastDay) {
-                lastDay = currentDay;
-                fetchData(); // Recarrega tudo automaticamente na virada do dia
-            }
-        }, 60000); // Checa a cada 1 minuto
+            const now = new Date();
+            if (now.getHours() === 0 && now.getMinutes() === 0) fetchData();
+        }, 60000);
+
     </script>
 </body>
 </html>
